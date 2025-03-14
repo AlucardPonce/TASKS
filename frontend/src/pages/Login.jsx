@@ -1,108 +1,80 @@
 import React, { useState } from "react";
-import QRCode from "react-qr-code";
+import { Form, Input, Button, message, Card } from "antd";
 import axios from "axios";
 
+const API_URL = "http://localhost:3001";
+
 const Login = () => {
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [otp, setOtp] = useState("");
-    const [step, setStep] = useState("login");
-    const [secretUrl, setSecretUrl] = useState("");
-//
-    const handleRegister = async (e) => {
-        e.preventDefault();
-        try {
-            const res = await axios.post("http://localhost:3001/register", {
-                email,
-                password
-            });
-            console.log(res.data);
-            if (res.data.secret) {
-                setSecretUrl(res.data.secret);
-                setStep("qr");
-            }
-        } catch (error) {
-            console.error("Error en el registro:", error);
-        }
-    };
-    //modif
+    const [loading, setLoading] = useState(false);
 
-    const handleLogin = async (e) => {
-        e.preventDefault();
+    const onFinish = async (values) => {
+        setLoading(true);
         try {
-            const res = await axios.post("http://localhost:3001/login", {
-                email,
-                password
+            // Enviamos la solicitud de login
+            const response = await axios.post(`${API_URL}/login`, {
+                email: values.email,
+                password: values.password,
             });
 
-            if (res.data.requiresMFA) {
-                setStep("otp");
-            } else {
-                alert("Inicio de sesión exitoso");
-            }
+            const { token, role } = response.data;
+            localStorage.setItem("token", token);
+            localStorage.setItem("role", role);
+            message.success("Inicio de sesión exitoso");
+            console.log("Usuario autenticado:", response.data);
         } catch (error) {
-            console.error("Error en inicio de sesión:", error);
-            alert("Error en el inicio de sesión");
+            // Manejo de errores mejorado
+            const errorMessage = error.response?.data?.message || "Error en el inicio de sesión";
+            console.error("Error al iniciar sesión:", errorMessage);
+            message.error(errorMessage); // Mostrar mensaje de error en el frontend
         }
+        setLoading(false);
     };
 
-    const handleVerifyOTP = async (e) => {
-        e.preventDefault();
-        try {
-            const res = await axios.post("http://localhost:3001/verify-otp", {
-                email,
-                otp
-            });
-            alert(res.data.message);
-        } catch (error) {
-            console.error("Error en la verificación de OTP:", error);
-            alert("Error al verificar OTP");
+    const handleResetPassword = async () => {
+        const email = prompt("Ingresa tu correo para restablecer la contraseña:");
+        if (email) {
+            try {
+                await axios.post(`${API_URL}/reset-password`, { email });
+                message.success("Correo de recuperación enviado");
+            } catch (error) {
+                // Mejor manejo de errores en la función de restablecimiento de contraseña
+                const resetErrorMessage = error.response?.data?.message || "No se pudo enviar el correo";
+                console.error("Error al enviar el correo de recuperación:", resetErrorMessage);
+                message.error(resetErrorMessage); // Mostrar mensaje de error en el frontend
+            }
         }
     };
 
     return (
-        <div>
-            {step === "login" && (
-                <form onSubmit={handleLogin}>
-                    <input
-                        type="email"
-                        placeholder="Email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                    />
-                    <input
-                        type="password"
-                        placeholder="Password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                    />
-                    <button type="submit">Iniciar sesión</button>
-                    <button type="button" onClick={handleRegister}>
-                        Registrarse
-                    </button>
-                </form>
-            )}
+        <Card title="Iniciar Sesión" style={{ width: 400, margin: "50px auto" }}>
+            <Form layout="vertical" onFinish={onFinish}>
+                <Form.Item
+                    label="Correo Electrónico"
+                    name="email"
+                    rules={[{ required: true, message: "Por favor ingresa tu correo" }, { type: "email", message: "Correo inválido" }]}
+                >
+                    <Input />
+                </Form.Item>
 
-            {step === "otp" && (
-                <form onSubmit={handleVerifyOTP}>
-                    <input
-                        type="text"
-                        placeholder="Código OTP"
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value)}
-                    />
-                    <button type="submit">Verificar OTP</button>
-                </form>
-            )}
+                <Form.Item
+                    label="Contraseña"
+                    name="password"
+                    rules={[{ required: true, message: "Por favor ingresa tu contraseña" }]}
+                >
+                    <Input.Password />
+                </Form.Item>
 
-            {step === "qr" && (
-                <div>
-                    <QRCode value={secretUrl} />
-                    <p>Escanea este código QR con Google Authenticator</p>
-                </div>
-            )}
-        </div>
+                <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={loading} block>
+                        Iniciar Sesión
+                    </Button>
+                </Form.Item>
+
+                <Button type="link" onClick={handleResetPassword}>
+                    ¿Olvidaste tu contraseña?
+                </Button>
+            </Form>
+        </Card>
     );
 };
 
