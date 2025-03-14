@@ -25,6 +25,7 @@ const Login = () => {
             console.error("Error en el registro:", error);
         }
     };
+    //modif
 
     const handleLogin = async (e) => {
         e.preventDefault();
