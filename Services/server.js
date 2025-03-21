@@ -3,6 +3,8 @@ const cors = require("cors");
 const admin = require("firebase-admin");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+const fs = require('fs');
 require("dotenv").config();
 
 const serviceAccount = JSON.parse(process.env.FSA);
@@ -19,6 +21,17 @@ db.collection('users').limit(1).get()
 
 const SECRET_KEY = process.env.JWT_SECRET || "supersecret";
 
+const transporter = nodemailer.createTransport({
+    service: 'gmail', // Puedes usar cualquier servicio de correo electrónico
+    auth: {
+        user: 'poncealucard@gmail.com',
+        pass: 'egapytjokznsagqt'
+    }
+});
+
+const generateRandomPassword = () => {
+    return Math.random().toString(36).slice(-8); // Genera una contraseña aleatoria de 8 caracteres
+};
 const checkAttempts = async (email) => {
     const userDoc = db.collection("loginAttempts").doc(email);
     const docSnap = await userDoc.get();
@@ -33,12 +46,10 @@ const checkAttempts = async (email) => {
         storedAttempts.lockUntil = null;
     }
 
-    // Si la cuenta está bloqueada, devolver un mensaje de error
     if (storedAttempts.lockUntil && now < storedAttempts.lockUntil) {
         return { allowed: false, message: "Cuenta bloqueada. Intenta más tarde." };
     }
 
-    // Si no está bloqueada, devolver el estado actual
     return { allowed: storedAttempts.attempts < 3, message: "Intenta iniciar sesión nuevamente." };
 };
 
@@ -48,7 +59,7 @@ const updateAttempts = async (email, reset = false) => {
     let attempts = reset ? 0 : (docSnap.exists ? docSnap.data().attempts + 1 : 1);
     let lockUntil = null;
     if (attempts >= 3) {
-        lockUntil = Date.now() + 10 * 1000; // Bloquea por 10 segundos
+        lockUntil = Date.now() + 10 * 1000;
     }
     await userDoc.set({ attempts, lockUntil }, { merge: true });
 };
@@ -56,38 +67,82 @@ const updateAttempts = async (email, reset = false) => {
 app.post("/login", async (req, res) => {
     const { email, password } = req.body;
     const { allowed, message } = await checkAttempts(email);
-    if (!allowed) return res.status(403).json({ message }); // Mensaje de cuenta bloqueada
+
+    const now = new Date().toISOString();
+
+    if (!allowed) {
+        const userDoc = await db.collection("loginAttempts").doc(email).get();
+        const lockUntil = userDoc.data().lockUntil;
+        const unlockTime = new Date(lockUntil).toISOString();
+
+        const logMessage = `${now} - Cuenta BLOQUEADA para ${email}. Desbloqueo a las: ${unlockTime}\n`;
+        fs.appendFile('log.txt', logMessage, (err) => {
+            if (err) {
+                console.error('Error al escribir en el archivo de logs:', err);
+            }
+        });
+        return res.status(403).json({ message: "Cuenta bloqueada. Intenta más tarde." });
+    }
 
     try {
         const userDoc = await db.collection("users").doc(email).get();
         if (!userDoc.exists) {
-            return res.status(404).json({ message: "Usuario no encontrado" }); // Mensaje de usuario no encontrado
+            const logMessage = `${now} - Usuario NO encontrado: ${email}\n`;
+            fs.appendFile('log.txt', logMessage, () => {});
+            return res.status(404).json({ message: "Usuario no encontrado" });
         }
 
         const userData = userDoc.data();
         const isMatch = await bcrypt.compare(password, userData.password);
+
         if (!isMatch) {
             await updateAttempts(email);
-            return res.status(401).json({ message: "Credenciales incorrectas" }); // Mensaje de credenciales incorrectas
+            const logMessage = `${now} - Intento FALLIDO de ${email}\n`;
+            fs.appendFile('log.txt', logMessage, () => {});
+            return res.status(401).json({ message: "Credenciales incorrectas" });
         }
 
         await updateAttempts(email, true);
+
+        const logMessage = `${now} - Inicio de sesión EXITOSO de ${email}\n`;
+        fs.appendFile('log.txt', logMessage, () => {});
+
         const token = jwt.sign({ email, role: userData.role }, SECRET_KEY, { expiresIn: "10m" });
-        res.json({ token, role: userData.role });
+        return res.json({ token, role: userData.role });
+
     } catch (error) {
-        res.status(500).json({ message: "Error en el servidor. Intenta nuevamente." }); // Mensaje de error genérico
+        const logMessage = `${now} - Error de servidor para ${email}: ${error.message}\n`;
+        fs.appendFile('log.txt', logMessage, () => {});
+        return res.status(500).json({ message: "Error en el servidor. Intenta nuevamente." });
     }
 });
 
 app.post("/reset-password", async (req, res) => {
     const { email } = req.body;
     try {
-        await admin.auth().generatePasswordResetLink(email);
+        const newPassword = generateRandomPassword();
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        await db.collection("users").doc(email).update({ password: hashedPassword });
+
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: 'Restablecimiento de contraseña',
+            text: `Tu nueva contraseña es: ${newPassword}`
+        };
+
+        await transporter.sendMail(mailOptions);
+
         res.json({ message: "Correo de recuperación enviado" });
     } catch (error) {
-        res.status(400).json({ message: "No se pudo enviar el correo" });
+        console.error("Error al enviar el correo de recuperación:", error);
+        res.status(400).json({ message: "No se pudo enviar el correo", error: error.message });
     }
 });
+
+
+
 const createUserRole = async (email, role) => {
     try {
         await db.collection("roles").doc(email).set({ role });
