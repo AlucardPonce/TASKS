@@ -29,6 +29,26 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+
+const verifyToken = (req, res, next) => {
+    const token = req.headers['authorization']?.split(' ')[1]; // Obtener el token del header
+
+    if (!token) {
+        return res.status(401).json({ message: 'Token no proporcionado' });
+    }
+
+    jwt.verify(token, SECRET_KEY, (err, decoded) => {
+        if (err) {
+            return res.status(401).json({ message: 'Token inválido o expirado' });
+        }
+
+        req.user = decoded; // Asigna los datos del usuario al objeto `req`
+        next();
+    });
+};
+
+
+
 const generateRandomPassword = () => {
     return Math.random().toString(36).slice(-8); // Genera una contraseña aleatoria de 8 caracteres
 };
@@ -64,6 +84,7 @@ const updateAttempts = async (email, reset = false) => {
     await userDoc.set({ attempts, lockUntil }, { merge: true });
 };
 
+
 app.post("/login", async (req, res) => {
     const { email, password } = req.body;
     const { allowed, message } = await checkAttempts(email);
@@ -88,7 +109,7 @@ app.post("/login", async (req, res) => {
         const userDoc = await db.collection("users").doc(email).get();
         if (!userDoc.exists) {
             const logMessage = `${now} - Usuario NO encontrado: ${email}\n`;
-            fs.appendFile('log.txt', logMessage, () => {});
+            fs.appendFile('log.txt', logMessage, () => { });
             return res.status(404).json({ message: "Usuario no encontrado" });
         }
 
@@ -98,24 +119,27 @@ app.post("/login", async (req, res) => {
         if (!isMatch) {
             await updateAttempts(email);
             const logMessage = `${now} - Intento FALLIDO de ${email}\n`;
-            fs.appendFile('log.txt', logMessage, () => {});
+            fs.appendFile('log.txt', logMessage, () => { });
             return res.status(401).json({ message: "Credenciales incorrectas" });
         }
 
         await updateAttempts(email, true);
 
         const logMessage = `${now} - Inicio de sesión EXITOSO de ${email}\n`;
-        fs.appendFile('log.txt', logMessage, () => {});
+        fs.appendFile('log.txt', logMessage, () => { });
 
         const token = jwt.sign({ email, role: userData.role }, SECRET_KEY, { expiresIn: "10m" });
+
         return res.json({ token, role: userData.role });
 
     } catch (error) {
         const logMessage = `${now} - Error de servidor para ${email}: ${error.message}\n`;
-        fs.appendFile('log.txt', logMessage, () => {});
+        fs.appendFile('log.txt', logMessage, () => { });
         return res.status(500).json({ message: "Error en el servidor. Intenta nuevamente." });
     }
 });
+
+
 
 app.post("/reset-password", async (req, res) => {
     const { email } = req.body;
@@ -175,6 +199,11 @@ app.post("/register", async (req, res) => {
         res.status(400).json({ message: `Error al registrar usuario: ${error.message}` });
     }
 });
+
+app.get("/some-protected-route", verifyToken, (req, res) => {
+    res.json({ message: "Validación de token correco y Ruta protegida accedida correctamente", user: req.user });
+});
+
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Servidor en http://localhost:${PORT}`));

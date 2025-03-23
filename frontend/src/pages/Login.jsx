@@ -1,16 +1,24 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Form, Input, Button, message, Card } from "antd";
 import axios from "axios";
 import { loadCaptchaEnginge, LoadCanvasTemplate, validateCaptcha } from 'react-simple-captcha';
+import { useNavigate } from "react-router-dom"; // Importar useNavigate
 
 const API_URL = "http://localhost:3001";
 
 const Login = () => {
     const [loading, setLoading] = useState(false);
     const [captchaInput, setCaptchaInput] = useState("");
+    const navigate = useNavigate(); // Inicializar el hook useNavigate
+
+    // Eliminar el token al cargar el componente (cuando el usuario accede al login)
+    useEffect(() => {
+        localStorage.removeItem("token"); // Elimina el token guardado
+        localStorage.removeItem("role");  // Elimina el role guardado
+    }, []);
 
     // Cargar captcha cuando el componente se monta
-    React.useEffect(() => {
+    useEffect(() => {
         loadCaptchaEnginge(6); // 6 es la cantidad de caracteres
     }, []);
 
@@ -28,10 +36,12 @@ const Login = () => {
             });
 
             const { token, role } = response.data;
-            localStorage.setItem("token", token);
-            localStorage.setItem("role", role);
+            localStorage.setItem("token", token);  // Guardar el token
+            localStorage.setItem("role", role);    // Guardar el rol
             message.success("Inicio de sesión exitoso");
             console.log("Usuario autenticado:", response.data);
+
+            navigate("/home");
         } catch (error) {
             const errorMessage = error.response?.data?.message || "Error en el inicio de sesión";
             console.error("Error al iniciar sesión:", errorMessage);
@@ -60,10 +70,7 @@ const Login = () => {
                 <Form.Item
                     label="Correo Electrónico"
                     name="email"
-                    rules={[
-                        { required: true, message: "Por favor ingresa tu correo" },
-                        { type: "email", message: "Correo inválido" },
-                    ]}
+                    rules={[{ required: true, message: "Por favor ingresa tu correo" }, { type: "email", message: "Correo inválido" }]}
                 >
                     <Input />
                 </Form.Item>
