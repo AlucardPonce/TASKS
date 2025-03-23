@@ -1,0 +1,34 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+**/node_modules
+/node_modules
+# Ignorar node_modules en todas las subcarpetas
+node_modules/
+/node_modules/.cache/default-development/0.pack
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/build
+
+# misc
+.env
+**/.env
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+project01/node_modules/.cache/default-development/0.pack
+project01/node_modules/.cache/default-development/0.pack
+/project01/node_modules/.cache
+project01/node_modules/.cache/default-development/0.pack
+/project01/node_modules
