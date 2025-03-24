@@ -84,6 +84,8 @@ const updateAttempts = async (email, reset = false) => {
     await userDoc.set({ attempts, lockUntil }, { merge: true });
 };
 
+// Almacenamiento temporal de códigos de verificación
+const verificationCodes = {};
 
 app.post("/login", async (req, res) => {
     const { email, password } = req.body;
@@ -123,17 +125,54 @@ app.post("/login", async (req, res) => {
             return res.status(401).json({ message: "Credenciales incorrectas" });
         }
 
-        await updateAttempts(email, true);
+        // Generar un código de verificación
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        verificationCodes[email] = verificationCode;
 
-        const logMessage = `${now} - Inicio de sesión EXITOSO de ${email}\n`;
+        // Enviar el código por correo electrónico
+        const mailOptions = {
+            from: 'poncealucard@gmail.com',
+            to: email,
+            subject: 'Código de Verificación',
+            text: `Tu código de verificación es: ${verificationCode}`,
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        const logMessage = `${now} - Código de verificación enviado a ${email}\n`;
         fs.appendFile('log.txt', logMessage, () => { });
 
-        const token = jwt.sign({ email, role: userData.role }, SECRET_KEY, { expiresIn: "10m" });
-
-        return res.json({ token, role: userData.role });
-
+        return res.status(200).json({ message: "Código de verificación enviado" });
     } catch (error) {
         const logMessage = `${now} - Error de servidor para ${email}: ${error.message}\n`;
+        fs.appendFile('log.txt', logMessage, () => { });
+        return res.status(500).json({ message: "Error en el servidor. Intenta nuevamente." });
+    }
+});
+
+// Endpoint para verificar el código
+app.post("/verify", async (req, res) => {
+    const { email, code } = req.body;
+
+    try {
+        if (verificationCodes[email] === code) {
+            // Generar un token JWT
+            const userDoc = await db.collection("users").doc(email).get();
+            const userData = userDoc.data();
+            const token = jwt.sign({ email, role: userData.role }, SECRET_KEY, { expiresIn: "10m" });
+
+            // Eliminar el código de verificación después de usarlo
+            delete verificationCodes[email];
+
+            const logMessage = `${new Date().toISOString()} - Inicio de sesión EXITOSO de ${email}\n`;
+            fs.appendFile('log.txt', logMessage, () => { });
+
+            return res.status(200).json({ token, role: userData.role });
+        } else {
+            return res.status(400).json({ message: "Código de verificación incorrecto" });
+        }
+    } catch (error) {
+        const logMessage = `${new Date().toISOString()} - Error al verificar el código para ${email}: ${error.message}\n`;
         fs.appendFile('log.txt', logMessage, () => { });
         return res.status(500).json({ message: "Error en el servidor. Intenta nuevamente." });
     }
